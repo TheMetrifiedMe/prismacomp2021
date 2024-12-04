@@ -1,0 +1,398 @@
+---
+title: "prismacomp2021visualizations"
+author: "Alexander Schniedermann"
+date: '2024-12-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(ggpubr)
+library(ggrepel)
+library(tidyr)
+library(dplyr)
+theme_set(theme_pubr())
+
+
+```
+
+# Figure 1 (Fields by output)
+Original description: "Scatterplot of the rates of systematic reviews and PRISMA-standardized systematic reviews among all secondary research of Web of Science subject categories which published at least 500 reviews and 50 systematic reviews from 2009 to 2015"
+
+## Figure 1 - Data Preparation
+
+```{r}
+percents = read.csv2("./data/fields_top_fields_rates.csv")
+prisma_fields = c("Health Care Sciences & Services",
+                  "General & Internal Medicine",
+                  "Surgery",
+                  "Development Studies",
+                  "Public, Environmental & Occupational Health")
+
+names(percents) = c("ID","CLASSIFICATION","SSR_RATE","SR_RATE","RELATION")
+
+# read and clean set with annual data
+allrates = read.csv("./data/fields_WoS_extended_peryear.csv")
+allrates$PUB_PRISMA = "No"
+allrates$PUB_PRISMA[allrates$CLASSIFICATION %in% prisma_fields] = "Yes"
+allrates <- subset(allrates, allrates$PUBYEAR <= 2015 & allrates$PUBYEAR > 2009)
+allrates <- allrates %>%
+  group_by(CLASSIFICATION) %>%
+  summarise(TOTALPRISSR = sum(MED_SREVIEW_TITLED), PUB_PRISMA = first(PUB_PRISMA))
+
+plotdata <- percents %>%
+  left_join(allrates, by=join_by(CLASSIFICATION))
+
+
+```
+
+## Figure 1 - Plot
+*Note that due to the ggrepel labeling algorithm, each plot looks a bit different. However, the data and provided information is always the same*
+
+
+```{r plotdata}
+
+#plot mit ggrepel 
+bubblefield = ggplot(plotdata, aes(x=SSR_RATE, y=SR_RATE, label = CLASSIFICATION)) +
+  geom_point(aes(color = PUB_PRISMA, size = TOTALPRISSR), alpha=0.5) +
+  scale_size(range = c(1, 18)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 12)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  geom_text_repel(size = 3.8,
+                  force = 8, 
+                  force_pull=3,
+                  min.segment.length = 0.5,
+                  max.iter = 100000,
+                  max.overlaps = 11) +
+  theme(legend.position="bottom") + 
+  labs(x="Field assignation of PRISMA-based systematic reviews (in %)",
+       y="Field assignation of systematic reviews (in %)",
+       size="Total count of assignations tp PRISMA reviews",
+       color="Assigned to PRISMA guideline document") + 
+  guides(color = guide_legend(override.aes = aes(size = 10)))
+
+bubblefield
+
+```
+
+
+# Figure 2 (Fields by rank)
+Original description: "Ranked cumulative proportions of field assignments and cumulative counts to PRISMA-based systematic reviews from 2010 to 2015. Restricted to fields that have at least a 2% rate of overall assignments"
+
+*Note that the data for 2010 is slightly different as in the published version. In the original version, the papers per field counts started in 2010 while the annual overall counts started in 2009.*
+
+## Figure 2 - Preparing the data
+```{r}
+
+# read and clean set with annual data
+allrates = read.csv("./data/fields_WoS_extended_peryear.csv")
+allrates$PUB_PRISMA = "No"
+allrates$PUB_PRISMA[allrates$CLASSIFICATION %in% prisma_fields] = "Yes"
+allrates <- subset(allrates, allrates$PUBYEAR <= 2015 & allrates$PUBYEAR > 2009)
+
+
+
+# calculate sums, cumulative sums, ranking positions, and labels based on annual set
+allrates <- allrates %>% 
+  arrange(PUBYEAR) %>%
+  mutate(CUMCNT = cumsum(MED_SREVIEW_TITLED)) %>%
+  group_by(PUBYEAR) %>%
+  mutate(ANNUAL_TOTAL = sum(MED_SREVIEW_TITLED), 
+         TOTAL_CUMUL_SUM = max(CUMCNT)) %>%
+  ungroup() %>%
+  group_by(CLASSIFICATION) %>%
+  arrange(PUBYEAR) %>%
+  mutate(FIELDCUMUL = cumsum(MED_SREVIEW_TITLED)) %>%
+  ungroup() %>%
+  mutate(ANNUAL_RATE_RND = round((FIELDCUMUL / TOTAL_CUMUL_SUM )*100,1),
+         ALT_LABEL = paste(sprintf("%5.1f", ANNUAL_RATE_RND), CLASSIFICATION, sep="%: ")
+         ) %>%
+  group_by(PUBYEAR) %>%
+  mutate(ANNUAL_RANKS = as.numeric(rank(ANNUAL_RATE_RND, ties.method = "first")))
+  
+
+# exclude all fields that have less than 2% in 2015, create ranks for cisualization
+filteredset <- allrates %>%
+  filter(CLASSIFICATION %in% filter(allrates, PUBYEAR == 2015 & ANNUAL_RATE_RND >= 2)$CLASSIFICATION) %>%
+  group_by(PUBYEAR) %>%
+  mutate(ANNUAL_RANKS = as.numeric(rank(ANNUAL_RATE_RND, ties.method = "first")))  
+
+
+```
+
+## Figure 2 - Plot
+```{r}
+plot_annual_ranks = 
+  ggplot(data = filteredset, aes(x = PUBYEAR, y = ANNUAL_RANKS, group = CLASSIFICATION)) +
+  geom_line(aes(color = PUB_PRISMA , alpha = 0.5, size = 2),show.legend = FALSE) +
+  geom_point(aes(color = PUB_PRISMA , size = 2 ,alpha = 1)) +
+  geom_point(aes(color = PUB_PRISMA , size = FIELDCUMUL ,alpha = 0.8)) +
+  scale_size(range = c(1, 15)) +
+  labs(color = "Assigned to PRISMA guideline document",
+       x="Publication year",
+       y="Ranked cumulative %",
+       size = "Cumulative counts") +
+  geom_text(data = subset(filteredset, filteredset$PUBYEAR==2010), 
+            aes(label=ALT_LABEL), hjust = -0.00001,position = position_nudge(x = -1.5, y=-0.3)) +
+  geom_text(data = subset(filteredset, filteredset$PUBYEAR==2015), 
+            aes(label=ALT_LABEL), hjust = -0.00001,position = position_nudge(x = 0.1)) +
+  scale_x_continuous(breaks = c(2010:2015), expand=c(0,0), limits =c(2008.5,2017)) +
+  theme(axis.line.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.position="bottom"
+  ) +
+  guides(alpha = FALSE, color = guide_legend(override.aes = aes(size = 10)))
+
+plot_annual_ranks
+```
+
+# Figure 3 (Countries by output)
+Original description: "Overall number of research syntheses, portions of systematic reviews and PRISMA- based systematic reviews by country, and national association with the Commonwealth. Based on fractional assignment of author’s affiliations. Labels are restricted to countries that published at least 500 reviews, have at least 10% systematic reviews or 2% for PRISMA-based reviews accordingly"
+
+## Figure 3 - Preparing the data
+```{r}
+
+#read data, ISO countrycodes, merge...
+countrydata_a = read.csv("./data/country_totals.csv")
+
+
+# Filter data so that only entries with >5000 tiems, 10%SR or 2%SSR get labels (--> 43 instead of 67 countries)
+countrydata_a$COUNTRY_FILTERED <- NA
+countrydata_a[countrydata_a$TOTAL >= 5000 | countrydata_a$RATE_SR  >= 10 | countrydata_a$RATE_SSR >= 2,c("COUNTRY_FILTERED")] <- countrydata_a[countrydata_a$TOTAL >= 5000 | countrydata_a$RATE_SR  >= 10 | countrydata_a$RATE_SSR >= 2,c("COUNTRY")]
+
+
+```
+
+## Figure 3 - Plot
+```{r}
+
+country_bubble_plot = ggplot(countrydata_a, aes(x=RATE_SSR, y=RATE_SR, label = COUNTRY_FILTERED)) +
+  geom_point(aes(color = COMMONWEALTH, size = TOTAL), alpha=0.5) +
+  scale_size(range = c(1, 30)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 16)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  geom_text_repel(aes(fill = COMMONWEALTH), 
+                   size = 3.8,
+                   nudge_y = 1,
+                   force = 22, 
+                   force_pull=2,
+                   min.segment.length = 0, 
+                   box.padding = 0.1, 
+                   segment.curvature = -0.1,
+                   segment.ncp = 3,
+                   segment.angle = 20,
+                   max.iter = 100000) +
+  theme(legend.position="bottom") + 
+  labs(x="Portion of PRISMA-based systematic reviews among domestic Reviews (in %)",
+       y="Portion of systematic reviews among domestic reviews (in %)",
+       size="Absolute number of domestic research syntheses",
+       color="Associated with the Commonwealth") + 
+  guides(color = guide_legend(override.aes = aes(size = 10)))
+
+country_bubble_plot
+
+```
+
+# Figure 4 (Countries by rank)
+Original description: "Ranked cumulative proportions and cumulative counts of country assignments to PRISMA-based systematic reviews from 2010 to 2015"
+
+## Figure 4 - Preparing the data
+```{r}
+cnanpp = read.csv("./data/country_SSR_annual.csv")
+
+#calculate and add cumulative percentages
+cumul_cnts = aggregate(cnanpp$CNTS, by=list(cnanpp$PUBYEAR), FUN = "sum")
+names(cumul_cnts) = c("PUBYEAR","ANNUAL_TOTAL")
+cumul_add = merge(x = cnanpp, y = cumul_cnts, by = "PUBYEAR", all.x=TRUE)
+
+cumul_annual = aggregate(cumul_add$CUM_CNT, by=list(cumul_add$PUBYEAR), FUN = "sum")
+names(cumul_annual) = c("PUBYEAR","CUMUL_TOTAL")
+cumul_add = merge(x = cumul_add, y =cumul_annual, by="PUBYEAR", all.x = TRUE)
+
+cumul_add$ANNUAL_RATE_RND = round((cumul_add$CUM_CNT  / cumul_add$CUMUL_TOTAL)*100,2)
+
+#create labels
+cumul_add$ANNUAL_RATE_LABEL = paste(sprintf("%5.1f", cumul_add$ANNUAL_RATE_RND), cumul_add$COUNTRY, sep="%: ")
+
+#create ranks based on annual rate
+cumul_add$ANNUAL_RANKS=""
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2010] = rank(cumul_add[cumul_add$PUBYEAR == 2010,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2011] = rank(cumul_add[cumul_add$PUBYEAR == 2011,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2012] = rank(cumul_add[cumul_add$PUBYEAR == 2012,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2013] = rank(cumul_add[cumul_add$PUBYEAR == 2013,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2014] = rank(cumul_add[cumul_add$PUBYEAR == 2014,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2015] = rank(cumul_add[cumul_add$PUBYEAR == 2015,12], ties.method="first")
+cumul_add$ANNUAL_RANKS[cumul_add$PUBYEAR ==2016] = rank(cumul_add[cumul_add$PUBYEAR == 2016,12], ties.method="first")
+
+
+```
+
+## Figure 4 - Plot
+```{r}
+
+plot_annual_ranks = 
+  ggplot(data = cumul_add, aes(x = PUBYEAR, y = as.numeric(ANNUAL_RANKS), group = COUNTRY))+
+  geom_line(aes(color = COMMONWEALTH, alpha = 0.5, size = 2),show.legend = FALSE) +
+  geom_point(aes(color = COMMONWEALTH, size = 2 ,alpha = 1)) +
+  geom_point(aes(color = COMMONWEALTH, size = CUM_CNT,alpha = 0.8)) +
+  scale_size(range = c(1, 15)) +
+  labs(color = "Associated with the Commonwealth",
+       x="Publication year",
+       y="Ranked cumulative %",
+       size = "Cumulative counts") +
+  geom_text(data = subset(cumul_add, cumul_add$PUBYEAR==2010), 
+            aes(label=ANNUAL_RATE_LABEL), hjust = -0.00001,position = position_nudge(x = -1.5)) +
+  geom_text(data = subset(cumul_add, cumul_add$PUBYEAR==2015), 
+            aes(label=ANNUAL_RATE_LABEL), hjust = -0.00001,position = position_nudge(x = 0.3)) +
+  scale_x_continuous(breaks = c(2010:2015), expand=c(0,0), limits =c(2008.5,2017)) +
+  scale_y_continuous(limits=c(0,17)) +
+  theme(axis.line.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.position="bottom"
+  ) +
+  guides(alpha = FALSE, color = guide_legend(override.aes = aes(size = 10)))
+
+plot_annual_ranks
+```
+
+# Figure 5 (Citation impact)
+Original description: "Box plots with median and mean (dots) values showing citation impact ranks by document type for absolute citations (ABS), mean-normalized citations (MNCS) and cumulative percentile ranks (CPIN), based on publications published from 2009 to 2015 with a 3-year citation window. The y-axes for ABS and MNCS are stripped of extreme outliers for the purpose of better visualization"
+
+## Figure 5 - Preparing the data
+```{r}
+
+fullset= read.csv("./data/citations_data.csv")
+
+comparison_abs = list(c("Article", "Review"), c("Review", "SysReview"), c("SysReview", "SysReview (PRISMA)"))
+```
+
+## Figure 5 - Plot
+Here, three individual plots are created and combined because facet_wrap() and similar functions struggle with different axis scales.
+
+```{r}
+#plot with absolute values
+secondplot_abs = ggboxplot(fullset, 
+                           x="MTYPEFINAL", 
+                           y="ABSOLUTES", 
+                           color ="MTYPEFINAL", 
+                           palette="Dark2", 
+                           shape="dose",
+                           ylab="Absolute Citation Scores",
+                           xlab = FALSE,
+                           ylim=c(0,75), 
+                           outlier.shape =NA,
+                           add = "mean_se",
+                           legend.title="Publication Types on x-Axis:"
+                           ) + rotate_x_text(angle = 65) +
+                            stat_compare_means(comparisons = comparison_abs) +
+                            stat_compare_means(label.y = 70)
+
+
+
+# plot with mean normalied citation scores (MNCS)
+secondplot_mncs = ggboxplot(fullset, 
+                            x="MTYPEFINAL", 
+                            y="MNCS", 
+                            color ="MTYPEFINAL", 
+                            palette="Dark2", 
+                            shape="dose", 
+                            ylab="Mean Normalized Citation Scores (MNCS)",
+                            xlab = FALSE,
+                            ylim=c(0,7.5),
+                            add = "mean_se",
+                            outlier.shape =NA
+                            ) + rotate_x_text(angle = 65) +
+                            stat_compare_means(comparisons = comparison_abs) +
+                            stat_compare_means(label.y = 7) 
+
+
+# plot with inclusive cumulative percentile ranks (cpin)
+secondplot_cpin = ggboxplot(fullset, 
+                            x="MTYPEFINAL", 
+                            y="CPIN_3Y", 
+                            color ="MTYPEFINAL", 
+                            palette="Dark2", 
+                            shape="dose", 
+                            outlier.shape =NA,
+                            add = "mean_se",
+                            ylab="Cumulative Percentile Ranks, Inclusive (in %)",
+                            xlab = FALSE
+                            ) + scale_y_continuous(breaks=c(25,50,75,100)) + 
+                            rotate_x_text(angle = 65) +
+                            stat_compare_means(comparisons = comparison_abs) + 
+                            stat_compare_means(label.y = 125)
+
+
+
+
+#combination of three plots
+finalplot = ggarrange(
+  secondplot_abs, secondplot_mncs, secondplot_cpin, labels = c("ABS", "MNCS","CPIN"), ncol=3,
+  common.legend = TRUE, legend = "bottom", hjust =-1
+)
+
+finalplot
+
+```
+
+# Figure 6 (annual Citation impact)
+
+Original description: "Average annual cumulative percentile ranks (CPIN) for each document types and corresponding errors, grouped by three different citation windows. As 2018 is the maximum year of citation data, the 5- and 10-year windows are short of data in 2014 and 2009 respectively"
+
+
+## Figure 6 - Plot
+
+Again, three individual plots are created and combined. These plots use the same data as those of Figure 5
+
+```{r}
+# 3 year window
+  rel_3_plot = ggline(fullset, 
+              x = "PUBYEAR", 
+              y = "CPIN_3Y", 
+              color ="MTYPEFINAL", 
+              palette="Dark2",
+              add = "mean_se"
+  ) + 
+  scale_x_continuous(name="Year of Publication", limits=c(2008.9, 2015.1), breaks=c(2009:2015)) + 
+  scale_y_continuous(name="Publication Type") + 
+  rotate_x_text(angle = 65)
+
+# 5 year window
+  rel_5_plot = ggline(fullset, 
+                      x = "PUBYEAR", 
+                      y = "CPIN_5Y", 
+                      color ="MTYPEFINAL", 
+                      palette="Dark2",
+                      add = "mean_se"
+  ) + 
+    scale_x_continuous(name="Year of Publication", limits=c(2008.9, 2015.1), breaks=c(2009:2015)) + 
+    scale_y_continuous(name="Publication Type") + 
+    rotate_x_text(angle = 65)
+
+# 10 year window
+  rel_10_plot = ggline(fullset, 
+                      x = "PUBYEAR", 
+                      y = "CPIN_10Y", 
+                      color ="MTYPEFINAL", 
+                      palette="Dark2",
+                      add = "mean_se"
+  ) + 
+    scale_x_continuous(name="Year of Publication", limits=c(2008.9, 2015.1), breaks=c(2009:2015)) + 
+    scale_y_continuous(name="Publication Type") + 
+    rotate_x_text(angle = 65)
+
+
+#zusammenlegen
+  finalplot = ggarrange(
+    rel_3_plot, rel_5_plot, rel_10_plot, labels = c("3-Year Window","5-Year Window","10-Year Window"), ncol=3,
+    common.legend = TRUE, legend = "bottom"
+  )
+
+finalplot  
+```
+
+Ende of file
