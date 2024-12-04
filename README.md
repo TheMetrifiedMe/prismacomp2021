@@ -3,8 +3,11 @@ This repository contains the analysis code for the publication: *Schniedermann, 
 The data can be found on [Zenodo](https://doi.org/10.5281/zenodo.14277542).
 
 The analytical process of the project consisted of three steps:
-1. The retrieval of document type data from PubMed via the PubMed parser tool([GitHub](https://github.com/TheMetrifiedMe/pubmedparser),[Zenodo](https://doi.org/10.5281/zenodo.14015253)) 
+1. The retrieval of document type data from PubMed via the PubMed parser tool ([GitHub](https://github.com/TheMetrifiedMe/pubmedparser), [Zenodo](https://doi.org/10.5281/zenodo.14015253)) 
 2. The preparation and cleaning of that data, as describbed in ["01sql-calculations.sql"](./01sql-calculations.sql).
 3. The matching of PubMed Data to the inhouse version of Web of Science, hosted by the German Competence Network Bibliometrics, as described in ["01sql-calculations.sql"](./01sql-calculations.sql).
 4. The calculation of fractional items counts, impact indicators and the analysis of the data, as describbed in ["01sql-calculations.sql"](./01sql-calculations.sql)
 5. The visualization with ggplot2 as described in , as describbed in ["01rmd-visualizations.Rmd"](./01rmd-visualizations.Rmd.r).
+
+Author: Alexander Schniedermann
+schniedermann@dzhw.eu
