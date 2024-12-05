@@ -13,3 +13,5 @@ The analytical process of the project consisted of three steps:
 ## Contact
 Author: Alexander Schniedermann
 schniedermann@dzhw.eu
+repo: [![DOI](https://zenodo.org/badge/897760608.svg)](https://doi.org/10.5281/zenodo.14283188)
+
